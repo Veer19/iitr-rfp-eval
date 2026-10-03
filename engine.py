@@ -100,7 +100,8 @@ def init_database(db_path: Path) -> None:
             FOREIGN KEY(run_id) REFERENCES rfp_runs(run_id)
         );
         """)
-        count = conn.execute("SELECT COUNT(*) FROM evaluation_criteria").fetchone()[0]
+        count = conn.execute(
+            "SELECT COUNT(*) FROM evaluation_criteria").fetchone()[0]
         if count == 0:
             conn.executemany(
                 """INSERT INTO evaluation_criteria
@@ -217,10 +218,12 @@ def normalize_review(raw: dict[str, Any], criteria: list[dict[str, Any]]) -> tup
         try:
             cid = int(item.get("criterion_id"))
         except (TypeError, ValueError):
-            warnings.append("A criterion result had an invalid criterion ID and was ignored.")
+            warnings.append(
+                "A criterion result had an invalid criterion ID and was ignored.")
             continue
         if cid in by_id:
-            warnings.append(f"Duplicate result for criterion {cid}; first result retained.")
+            warnings.append(
+                f"Duplicate result for criterion {cid}; first result retained.")
             continue
         by_id[cid] = item
 
@@ -232,7 +235,8 @@ def normalize_review(raw: dict[str, Any], criteria: list[dict[str, Any]]) -> tup
         maximum = float(criterion["max_score"])
 
         if cid not in by_id:
-            warnings.append(f"Criterion {cid} ({criterion['name']}) was missing; score set to 0.")
+            warnings.append(
+                f"Criterion {cid} ({criterion['name']}) was missing; score set to 0.")
             normalized.append({
                 "criterion_id": cid,
                 "score": 0.0,
@@ -248,19 +252,23 @@ def normalize_review(raw: dict[str, Any], criteria: list[dict[str, Any]]) -> tup
         try:
             score = float(raw_score)
         except (TypeError, ValueError):
-            warnings.append(f"Criterion {cid} had invalid score {raw_score!r}; score set to 0.")
+            warnings.append(
+                f"Criterion {cid} had invalid score {raw_score!r}; score set to 0.")
             score = 0.0
 
         if score < 0:
-            warnings.append(f"Criterion {cid} had a negative score; clipped to 0.")
+            warnings.append(
+                f"Criterion {cid} had a negative score; clipped to 0.")
             score = 0.0
         if score > maximum:
-            warnings.append(f"Criterion {cid} exceeded its maximum; clipped to {maximum}.")
+            warnings.append(
+                f"Criterion {cid} exceeded its maximum; clipped to {maximum}.")
             score = maximum
 
         quality = str(item.get("evidence_quality", "LOW")).upper()
         if quality not in {"HIGH", "MEDIUM", "LOW"}:
-            warnings.append(f"Criterion {cid} used unknown evidence quality; set to LOW.")
+            warnings.append(
+                f"Criterion {cid} used unknown evidence quality; set to LOW.")
             quality = "LOW"
 
         normalized.append({
@@ -291,7 +299,8 @@ def score_review(review: dict[str, Any], criteria: list[dict[str, Any]]) -> tupl
 
     for criterion in criteria:
         item = lookup[criterion["criterion_id"]]
-        contribution = (item["score"] / float(criterion["max_score"])) * float(criterion["weight"])
+        contribution = (
+            item["score"] / float(criterion["max_score"])) * float(criterion["weight"])
         total += contribution
 
         details.append({
@@ -331,7 +340,8 @@ def benchmark(details: list[dict[str, Any]], all_results: list[dict[str, Any]]) 
 def calculate_ppi(details: list[dict[str, Any]], criteria: list[dict[str, Any]]) -> float:
     weights = {c["criterion_id"]: float(c["weight"]) for c in criteria}
     return round(
-        sum(d["relative_performance"] * weights[d["criterion_id"]] / 100 for d in details),
+        sum(d["relative_performance"] *
+            weights[d["criterion_id"]] / 100 for d in details),
         4,
     )
 
@@ -353,8 +363,10 @@ def rank_results(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def classify_risk(text: str) -> str:
     value = text.lower()
-    high = ("security", "compliance", "regulatory", "privacy", "certification", "critical", "missing", "no evidence")
-    medium = ("integration", "dependency", "timeline", "assumption", "unclear", "limited", "change request", "scope")
+    high = ("security", "compliance", "regulatory", "privacy",
+            "certification", "critical", "missing", "no evidence")
+    medium = ("integration", "dependency", "timeline", "assumption",
+              "unclear", "limited", "change request", "scope")
     if any(k in value for k in high):
         return "HIGH"
     if any(k in value for k in medium):
@@ -381,7 +393,8 @@ def persist_result(db_path: Path, run_id: str, results: list[dict[str, Any]]) ->
             "INSERT OR REPLACE INTO rfp_runs(run_id, created_at, status) VALUES (?, ?, ?)",
             (run_id, datetime.now().isoformat(timespec="seconds"), "COMPLETED"),
         )
-        conn.execute("DELETE FROM supplier_results WHERE run_id = ?", (run_id,))
+        conn.execute(
+            "DELETE FROM supplier_results WHERE run_id = ?", (run_id,))
         for result in results:
             conn.execute(
                 """INSERT INTO supplier_results
@@ -401,16 +414,29 @@ def persist_result(db_path: Path, run_id: str, results: list[dict[str, Any]]) ->
 def load_run_history(db_path: Path) -> list[dict[str, Any]]:
     with sqlite3.connect(db_path) as conn:
         rows = conn.execute("""
-            SELECT run_id, created_at, status,
-                   COUNT(supplier_results.result_id) AS suppliers
+            SELECT
+                rfp_runs.run_id,
+                rfp_runs.created_at,
+                rfp_runs.status,
+                COUNT(supplier_results.result_id) AS suppliers
             FROM rfp_runs
-            LEFT JOIN supplier_results ON supplier_results.run_id = rfp_runs.run_id
-            GROUP BY run_id
-            ORDER BY created_at DESC
+            LEFT JOIN supplier_results
+                ON supplier_results.run_id = rfp_runs.run_id
+            GROUP BY
+                rfp_runs.run_id,
+                rfp_runs.created_at,
+                rfp_runs.status
+            ORDER BY rfp_runs.created_at DESC
         """).fetchall()
+
     return [
-        {"Run ID": r[0], "Created": r[1], "Status": r[2], "Suppliers": r[3]}
-        for r in rows
+        {
+            "Run ID": row[0],
+            "Created": row[1],
+            "Status": row[2],
+            "Suppliers": row[3],
+        }
+        for row in rows
     ]
 
 
@@ -427,8 +453,10 @@ def evaluate_batch(
     if abs(sum(float(c["weight"]) for c in criteria) - 100.0) > 0.001:
         raise ValueError("Criterion weights must total 100%.")
 
+    print(f"API KEY: '{api_key}' (length: {len(api_key) if api_key else 0})")
     client = OpenAI(api_key=api_key, base_url="https://openrouter.ai/api/v1")
-    run_id = "REV-" + datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
+    run_id = "REV-" + datetime.now().strftime("%Y%m%d-%H%M%S") + \
+        "-" + uuid.uuid4().hex[:6]
 
     with sqlite3.connect(db_path) as conn:
         conn.execute(
@@ -467,7 +495,8 @@ def evaluate_batch(
             # Schema validation catches malformed structures before normalization.
             ProposalReview.model_validate(raw)
         except (json.JSONDecodeError, ValidationError) as exc:
-            warnings.append(f"{supplier_name}: model output required normalization ({exc}).")
+            warnings.append(
+                f"{supplier_name}: model output required normalization ({exc}).")
             try:
                 raw = parse_json(raw_text)
             except json.JSONDecodeError:
@@ -505,7 +534,8 @@ def evaluate_batch(
         benchmarks[cid] = max(values) if values else 0.0
 
     for result in results:
-        result["criterion_details"] = benchmark(result["criterion_details"], results)
+        result["criterion_details"] = benchmark(
+            result["criterion_details"], results)
         result["ppi"] = calculate_ppi(result["criterion_details"], criteria)
 
     ranked = rank_results(results)
